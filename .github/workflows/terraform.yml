@@ -11,7 +11,8 @@ name: Terraform
 #   push to main                 -> apply in environment terraform-apply: plan, apply that
 #                                   plan, plan again and fail unless nothing is left
 #
-# Fork pull requests run check only, so fork code never reaches a token. No plan is
+# Fork pull requests run check only, so fork code never reaches a token. Dependabot pull
+# requests also run check only: they get no secrets; the merge plans and applies. No plan is
 # uploaded as an artifact: artifacts of a public repository can be downloaded by anyone,
 # and a plan file holds a copy of state.
 
@@ -72,7 +73,11 @@ jobs:
 
   plan:
     needs: check
-    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    # A Dependabot pull request gets no secrets, so its plan could not reach the state.
+    if: >-
+      github.event_name == 'pull_request'
+      && github.event.pull_request.head.repo.full_name == github.repository
+      && github.event.pull_request.user.login != 'dependabot[bot]'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     environment: terraform-plan
