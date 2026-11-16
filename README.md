@@ -36,6 +36,7 @@ rulesets. Delete the records the dashboard scan added to a new zone before the f
 |---|---|
 | Pull request from a branch of this repository | `check`, then `plan` (read-only tokens) |
 | Pull request from a fork | `check` only; fork code never reaches a token |
+| Pull request from Dependabot | `check` only; the merge plans and applies |
 | Push to `main` touching a root | `check`, then `apply` (write tokens) |
 
 No plan is uploaded as an artifact: artifacts of a public repository can be downloaded by anyone,
