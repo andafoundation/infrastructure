@@ -1,0 +1,48 @@
+name: GitHub Terraform
+
+# The settings of the andafoundation repositories (github/production): plan on a pull
+# request, apply on merge to main. The jobs are in the reusable terraform.yml, which
+# explains the guards. Nobody applies this root from a laptop.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'github/**'
+      - '.github/workflows/github-terraform.yml'
+      - '.github/workflows/terraform.yml'
+      - '!**/*.md'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'github/**'
+      - '.github/workflows/github-terraform.yml'
+      - '.github/workflows/terraform.yml'
+      - '!**/*.md'
+
+# Caps the reusable workflow's token as well. The workflow's own GITHUB_TOKEN never
+# reaches Terraform: the provider uses TF_GITHUB_TOKEN.
+permissions:
+  contents: read
+
+# Never cancelled on main: an apply killed mid-flight leaves the lock object behind
+# and the repositories half-changed. Pull request runs cancel their superseded plans.
+concurrency:
+  group: github-terraform-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+jobs:
+  terraform:
+    uses: ./.github/workflows/terraform.yml
+    with:
+      root: github/production
+      fmt-directory: github
+    # Explicit mapping, never `secrets: inherit`: this root gets the GitHub token and
+    # the state credentials, never the Cloudflare token. The values are environment
+    # secrets of terraform-plan (read-only) and terraform-apply (read and write).
+    # terraform.yml exports TF_GITHUB_TOKEN as GITHUB_TOKEN, the name the provider
+    # reads; a secret name cannot start with GITHUB_.
+    secrets:
+      TF_GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+      R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}

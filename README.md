@@ -16,12 +16,19 @@ Two Terraform roots, one per provider, each with its own state key and workflow:
 | `github/production/` (modules in `github/modules/`) | both repositories (secret scanning and push protection included), their `protect main` rulesets, Actions permissions, Dependabot settings, the environments with their branch policies and variables | `github-production.tfstate` | `.github/workflows/github-terraform.yml` |
 
 Both workflows call the reusable `.github/workflows/terraform.yml`, whose jobs are written out in
-this repository with public actions pinned by commit SHA. The cloudflare root is in place; the
-github root and its workflow follow in the next pull request.
+this repository with public actions pinned by commit SHA.
 
 The cloudflare root adopts the two zones with `cloudflare/production/import-zones.tf` (a zone can
 only be added in the dashboard) and creates everything else: records, settings and the redirect
 rulesets. Delete the records the dashboard scan added to a new zone before the first apply.
+
+The github root manages a personal account, so it has no organization, team or member settings.
+`github/production/imports.tf` adopts what existed before it: both repositories, the three
+environments (`monorepo/production`, `infrastructure/terraform-plan`,
+`infrastructure/terraform-apply`) and the `main` branch policy of the two environments limited to
+`main`. The rows match what GitHub holds, so these imports change nothing. The plan creates the
+two `protect main` rulesets, the Actions permissions, the Dependabot switches and the environment
+variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`.
 
 ## The loop
 
@@ -72,20 +79,45 @@ GitHub settings and set the new value with the `gh secret set` command above.
 
 The files hold placeholders for values that exist only once the Anda Cloudflare account, its R2
 bucket and the zones are created. Replace each one before the first pull request runs a plan;
-`git grep -n '<ANDA'` lists every place.
+`git grep -n -E '<[A-Z_]+>' -- '*.tf'` lists every place.
 
 | Placeholder | Value | File |
 |---|---|---|
 | `<ANDA_ACCOUNT_ID>` | the Anda Cloudflare account id (dashboard, Account home, "Account ID") | `cloudflare/production/variables-environment.tf` (default of `cloudflare_account_id`); `cloudflare/production/provider.tf` (R2 endpoint `https://<ANDA_ACCOUNT_ID>.r2.cloudflarestorage.com`) |
 | `<ANDAPHILOSOPHY_COM_ZONE_ID>` | zone id of `andaphilosophy.com` (zone Overview, "Zone ID") | `cloudflare/production/import-zones.tf` |
 | `<ANDAISM_COM_ZONE_ID>` | zone id of `andaism.com` | `cloudflare/production/import-zones.tf` |
+| `<ANDA_ACCOUNT_ID>` (again) | the same account id | `github/production/provider.tf` (R2 endpoint); `github/production/variables-environments.tf` (variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`) |
+| `<INFRASTRUCTURE_DESCRIPTION>` | the description of this repository as GitHub shows it, empty string if none | `github/production/variables-repositories.tf` |
+| `<MONOREPO_PRODUCTION_MAIN_POLICY_ID>` | id of the branch policy `main` of `monorepo/production` (command below) | `github/production/imports.tf` |
+| `<INFRASTRUCTURE_TERRAFORM_APPLY_MAIN_POLICY_ID>` | id of the branch policy `main` of `infrastructure/terraform-apply` (command below) | `github/production/imports.tf` |
+
+Read a branch policy id with
+`gh api repos/andafoundation/<repository>/environments/<environment>/deployment-branch-policies --jq '.branch_policies[] | select(.name == "main") | .id'`.
+If an environment has no such policy, remove its line from `imported_branch_policy_ids` in
+`github/production/imports.tf`; the apply then creates the policy.
+
+Before the first github plan, compare the two rows of `github/production/variables-repositories.tf`
+with what GitHub holds, signed in as `andafoundation`, and correct a row where it differs:
+`gh api repos/andafoundation/<repository> --jq '{description, homepage, visibility, has_issues, has_projects, has_wiki, allow_merge_commit, allow_squash_merge, allow_rebase_merge, allow_auto_merge, delete_branch_on_merge, allow_update_branch, squash_merge_commit_title, squash_merge_commit_message, merge_commit_title, merge_commit_message}'`.
+The merge settings in the rows are GitHub's defaults for a new repository; only an administrator
+of the repository can read the real values. A row that differs shows as an in-place update in the
+plan of an import.
 
 These are not placeholders but must match what the owner creates:
 
 - the R2 bucket is named `anda-terraform-state` (`bucket` in `cloudflare/production/provider.tf`);
 - the GitHub environments are named `terraform-plan` and `terraform-apply`, and each holds the
-  secrets `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID` and `R2_SECRET_ACCESS_KEY` of the table above
-  (`TF_GITHUB_TOKEN` is used from the github root on).
+  secrets `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
+  `TF_GITHUB_TOKEN` of the table above;
+- the environments match their rows in `github/production/variables-environments.tf`:
+  `terraform-plan` open to every branch, `terraform-apply` (and `production` of
+  `andafoundation/monorepo`) limited to `main` by a custom branch policy, no protected-branches
+  policy, no reviewers and no wait timer. Created by hand, that is
+  `gh api -X PUT repos/andafoundation/<repository>/environments/<environment> -F 'deployment_branch_policy[protected_branches]=false' -F 'deployment_branch_policy[custom_branch_policies]=true'`
+  followed by
+  `gh api -X POST repos/andafoundation/<repository>/environments/<environment>/deployment-branch-policies -f name=main -f type=branch`,
+  and `gh api -X PUT repos/andafoundation/infrastructure/environments/terraform-plan` alone for
+  `terraform-plan`.
 
 An account id and a zone id are identifiers, not credentials; they may be committed.
 
@@ -105,9 +137,12 @@ These are set by hand in the GitHub or Cloudflare settings:
 ## Bootstrap
 
 This repository was empty, so its first commit (this README, `.gitignore` and `LICENSE`) is pushed
-to `main` directly. Until the github root applies the `protect main` ruleset, every later change
-still goes through a pull request by hand. The apply token can change the protection of this
-repository; a pull request that weakens it shows that in its plan.
+to `main` directly. Until the github root applies the `protect main` rulesets, every later change
+still goes through a pull request by hand. The rulesets require a pull request with no approval
+(the foundation has one maintainer) and no status check: the workflows run only on the paths they
+cover, and a required check of a workflow that did not run would stay pending. The apply token
+can change the protection of this repository; a pull request that weakens it shows that in its
+plan.
 
 ## Licence
 

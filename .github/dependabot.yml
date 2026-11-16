@@ -4,6 +4,10 @@ updates:
     directory: /cloudflare/production
     schedule:
       interval: weekly
+  - package-ecosystem: terraform
+    directory: /github/production
+    schedule:
+      interval: weekly
   - package-ecosystem: github-actions
     directory: /
     schedule:

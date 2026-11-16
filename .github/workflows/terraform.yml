@@ -1,7 +1,7 @@
 name: Terraform
 
-# Reusable jobs for one Terraform root, called by cloudflare-terraform.yml (and later
-# github-terraform.yml). The jobs are written out here instead of calling a shared
+# Reusable jobs for one Terraform root, called by cloudflare-terraform.yml and
+# github-terraform.yml. The jobs are written out here instead of calling a shared
 # pipeline repository: this repository is public, and every action it runs is a public
 # action pinned by its full commit SHA.
 #
