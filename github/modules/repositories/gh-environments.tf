@@ -6,7 +6,7 @@
 # request runs plan in it.
 #
 # Secret values are not here: a value in Terraform would be stored in state.
-# They are set with gh secret set and survive any change to these resources.
+# They are set with gh secret set and survive an in-place update.
 resource "github_repository_environment" "environments" {
   for_each    = var.environments
   repository  = github_repository.repos[each.value.repository].name
@@ -18,6 +18,13 @@ resource "github_repository_environment" "environments" {
       protected_branches     = false
       custom_branch_policies = true
     }
+  }
+
+  # Deleting an environment deletes its secrets and branch policies, and a new
+  # repository or name replaces it. An environment is deleted in the UI first,
+  # then its row.
+  lifecycle {
+    prevent_destroy = true
   }
 }
 
