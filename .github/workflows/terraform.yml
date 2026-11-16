@@ -1,0 +1,159 @@
+name: Terraform
+
+# Reusable jobs for one Terraform root, called by cloudflare-terraform.yml (and later
+# github-terraform.yml). The jobs are written out here instead of calling a shared
+# pipeline repository: this repository is public, and every action it runs is a public
+# action pinned by its full commit SHA.
+#
+#   every pull request and push  -> check: fmt, init without a backend, validate; no secret
+#   pull request from a branch of this repository -> plan in environment terraform-plan,
+#                                   written to the job summary
+#   push to main                 -> apply in environment terraform-apply: plan, apply that
+#                                   plan, plan again and fail unless nothing is left
+#
+# Fork pull requests run check only, so fork code never reaches a token. No plan is
+# uploaded as an artifact: artifacts of a public repository can be downloaded by anyone,
+# and a plan file holds a copy of state.
+
+on:
+  workflow_call:
+    inputs:
+      root:
+        description: 'Terraform root to plan and apply, for example cloudflare/production'
+        required: true
+        type: string
+      fmt-directory:
+        description: 'Tree that terraform fmt checks, so shared modules are checked too, for example cloudflare'
+        required: true
+        type: string
+    # Every secret is an environment secret of terraform-plan or terraform-apply. The
+    # caller passes each one by name; the job's environment supplies the value. Not
+    # required, because each root uses only its own provider's token.
+    secrets:
+      CLOUDFLARE_API_TOKEN:
+        required: false
+      TF_GITHUB_TOKEN:
+        required: false
+      R2_ACCESS_KEY_ID:
+        required: false
+      R2_SECRET_ACCESS_KEY:
+        required: false
+
+permissions:
+  contents: read
+
+env:
+  TERRAFORM_VERSION: '1.16.5'
+  TF_IN_AUTOMATION: 'true'
+  TF_INPUT: 'false'
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: terraform fmt
+        env:
+          FMT_DIRECTORY: ${{ inputs.fmt-directory }}
+        run: terraform fmt -check -recursive -diff "$FMT_DIRECTORY"
+      - name: terraform init (no backend)
+        working-directory: ${{ inputs.root }}
+        run: terraform init -backend=false
+      - name: terraform validate
+        working-directory: ${{ inputs.root }}
+        run: terraform validate
+
+  plan:
+    needs: check
+    if: github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: terraform-plan
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      # A secret name cannot start with GITHUB_; the github provider reads GITHUB_TOKEN.
+      GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.root }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: terraform init
+      # -lock=false: a plan changes nothing, so it need not wait for an apply's lock.
+      - name: terraform plan
+        run: |
+          set -o pipefail
+          terraform plan -lock=false -no-color | tee plan.txt
+      - name: Write the plan to the job summary
+        if: always()
+        env:
+          ROOT: ${{ inputs.root }}
+        run: |
+          [ -f plan.txt ] || exit 0
+          {
+            echo "### Plan of \`$ROOT\`"
+            echo
+            echo '```text'
+            # The job summary holds at most 1 MiB; the full plan stays in the step log.
+            head -c 900000 plan.txt
+            echo
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  apply:
+    needs: check
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: terraform-apply
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      GITHUB_TOKEN: ${{ secrets.TF_GITHUB_TOKEN }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+    defaults:
+      run:
+        working-directory: ${{ inputs.root }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TERRAFORM_VERSION }}
+          terraform_wrapper: false
+      - name: terraform init
+        run: terraform init
+      # A fresh plan of the merged code, not the pull request's plan: the plan file
+      # never leaves this job. The lock timeout makes a concurrent run of this root
+      # wait for the lock object instead of failing at once.
+      - name: terraform plan
+        run: terraform plan -lock-timeout=10m -no-color -out=tfplan
+      - name: terraform apply
+        run: terraform apply -lock-timeout=10m -no-color tfplan
+      # The only guard that sees a change made in the dashboard after review, or an
+      # apply that did not converge: any change left fails the run.
+      - name: Verify that nothing is left to change
+        run: |
+          rc=0
+          terraform plan -lock-timeout=10m -no-color -detailed-exitcode || rc=$?
+          if [ "$rc" -eq 2 ]; then
+            echo "::error::The plan after apply still has changes."
+          fi
+          exit "$rc"
