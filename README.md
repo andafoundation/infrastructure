@@ -25,9 +25,11 @@ rulesets. Delete the records the dashboard scan added to a new zone before the f
 The github root manages a personal account, so it has no organization, team or member settings.
 `github/production/imports.tf` adopts what existed before it: both repositories, the three
 environments (`monorepo/production`, `infrastructure/terraform-plan`,
-`infrastructure/terraform-apply`) and the `main` branch policy of the two environments limited to
-`main`. The rows match what GitHub holds, so these imports change nothing. The plan creates the
-two `protect main` rulesets, the Actions permissions, the Dependabot switches and the environment
+`infrastructure/terraform-apply`). Where a row differs from what GitHub holds, the plan of its
+import shows an in-place update: the first plan sets the description and public visibility of this
+repository and turns on custom branch policies for the two environments limited to `main`. The
+plan also creates the two `protect main` rulesets, the Actions permissions, the Dependabot
+switches, the `main` branch policies of the two environments limited to `main` and the environment
 variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`.
 
 ## The loop
@@ -60,7 +62,7 @@ from the secrets below. Terraform `1.16.5`; providers `cloudflare/cloudflare ~> 
 ## Credentials
 
 Every secret is an environment secret of this repository, set with
-`gh secret set <NAME> -e <environment> -R andafoundation/infrastructure`. None has a value in
+`gh secret set <name> -e <environment> -R andafoundation/infrastructure`. None has a value in
 Terraform or in this repository.
 
 | Secret | Environment | Rights |
@@ -75,22 +77,7 @@ Terraform or in this repository.
 start with `GITHUB_`). The tokens do not expire. To rotate one, roll it in the Cloudflare or
 GitHub settings and set the new value with the `gh secret set` command above.
 
-## Values the owner fills in
-
-The files hold placeholders for values that exist only once the Anda Cloudflare account, its R2
-bucket and the zones are created. Replace each one before the first pull request runs a plan;
-`git grep -n -E '<[A-Z_]+>' -- '*.tf'` lists every place.
-
-| Placeholder | Value | File |
-|---|---|---|
-| `<INFRASTRUCTURE_DESCRIPTION>` | the description of this repository as GitHub shows it, empty string if none | `github/production/variables-repositories.tf` |
-| `<MONOREPO_PRODUCTION_MAIN_POLICY_ID>` | id of the branch policy `main` of `monorepo/production` (command below) | `github/production/imports.tf` |
-| `<INFRASTRUCTURE_TERRAFORM_APPLY_MAIN_POLICY_ID>` | id of the branch policy `main` of `infrastructure/terraform-apply` (command below) | `github/production/imports.tf` |
-
-Read a branch policy id with
-`gh api repos/andafoundation/<repository>/environments/<environment>/deployment-branch-policies --jq '.branch_policies[] | select(.name == "main") | .id'`.
-If an environment has no such policy, remove its line from `imported_branch_policy_ids` in
-`github/production/imports.tf`; the apply then creates the policy.
+## Values to check
 
 Before the first github plan, compare the two rows of `github/production/variables-repositories.tf`
 with what GitHub holds, signed in as `andafoundation`, and correct a row where it differs:
@@ -99,21 +86,17 @@ The merge settings in the rows are GitHub's defaults for a new repository; only 
 of the repository can read the real values. A row that differs shows as an in-place update in the
 plan of an import.
 
-These are not placeholders but must match what the owner creates:
+These must match what the owner creates:
 
 - the R2 bucket is named `anda-terraform-state` (`bucket` in `cloudflare/production/provider.tf`);
 - the GitHub environments are named `terraform-plan` and `terraform-apply`, and each holds the
   secrets `CLOUDFLARE_API_TOKEN`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` and
   `TF_GITHUB_TOKEN` of the table above;
-- the environments match their rows in `github/production/variables-environments.tf`:
+- the environments exist before the first github plan, with no reviewers and no wait timer.
+  Created by hand, that is `gh api -X PUT repos/andafoundation/<repository>/environments/<environment>`.
+  The apply then sets them as their rows in `github/production/variables-environments.tf` say:
   `terraform-plan` open to every branch, `terraform-apply` (and `production` of
-  `andafoundation/monorepo`) limited to `main` by a custom branch policy, no protected-branches
-  policy, no reviewers and no wait timer. Created by hand, that is
-  `gh api -X PUT repos/andafoundation/<repository>/environments/<environment> -F 'deployment_branch_policy[protected_branches]=false' -F 'deployment_branch_policy[custom_branch_policies]=true'`
-  followed by
-  `gh api -X POST repos/andafoundation/<repository>/environments/<environment>/deployment-branch-policies -f name=main -f type=branch`,
-  and `gh api -X PUT repos/andafoundation/infrastructure/environments/terraform-plan` alone for
-  `terraform-plan`.
+  `andafoundation/monorepo`) limited to `main` by a custom branch policy that the apply creates.
 
 An account id and a zone id are identifiers, not credentials; they may be committed.
 
