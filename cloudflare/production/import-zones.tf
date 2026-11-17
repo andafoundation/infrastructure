@@ -4,8 +4,8 @@
 # import whose address is already in state.
 locals {
   imported_zone_ids = {
-    "andaism.com"        = "<ANDAISM_COM_ZONE_ID>"
-    "andaphilosophy.com" = "<ANDAPHILOSOPHY_COM_ZONE_ID>"
+    "andaism.com"        = "703dc53c723c2196ee3ad032d62e7a93"
+    "andaphilosophy.com" = "b06231a1a43a7b7457082587359eba53"
   }
 }
 
