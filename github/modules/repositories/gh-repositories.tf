@@ -33,6 +33,14 @@ resource "github_repository" "repos" {
   # because GitHub refuses both settings there without a paid licence.
   # advanced_security is left out: on a public repository it is always on and
   # cannot be supplied.
+  # The block holds only what the provider round-trips. Provider 6.13.0 declares
+  # secret_scanning_non_provider_patterns and secret_scanning_ai_detection but
+  # neither sends nor reads them, so a sub-block for either would turn nothing on
+  # and plan a change on every run. Non-provider patterns (private keys,
+  # connection strings, passwords in generic form) and validity checks (GitHub
+  # asks the issuer whether a found secret still works) are therefore set
+  # through the API, as the README lists. An update of this block sends only
+  # the sub-blocks below, so it leaves those two settings as they are.
   dynamic "security_and_analysis" {
     for_each = each.value.visibility == "public" ? [each.key] : []
     content {

@@ -108,6 +108,15 @@ These are set by hand in the GitHub or Cloudflare settings:
   imported);
 - secret values and the tokens behind them;
 - private vulnerability reporting on both repositories;
+- on both repositories, the security settings that provider `integrations/github` 6.13.0 cannot
+  manage, set through the API as `andafoundation`. The provider neither sends nor reads them, so
+  they cause no change in a plan:
+  - secret scanning of non-provider patterns and secret scanning validity checks:
+    `gh api -X PATCH repos/andafoundation/<repository> --input -` with
+    `{"security_and_analysis": {"secret_scanning_non_provider_patterns": {"status": "enabled"}, "secret_scanning_validity_checks": {"status": "enabled"}}}`;
+  - code scanning with CodeQL default setup, which picks the languages itself (Actions here,
+    Actions and JavaScript/TypeScript in `andafoundation/monorepo`):
+    `gh api -X PATCH repos/andafoundation/<repository>/code-scanning/default-setup -f state=configured`;
 - Actions: "Require approval for all outside collaborators" on fork pull requests;
 - the nameservers and DNSSEC at the domain registrar.
 - the Worker and its custom domain `andaphilosophy.com`, deployed from `andafoundation/monorepo`,
