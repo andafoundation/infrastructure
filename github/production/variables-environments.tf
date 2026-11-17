@@ -19,7 +19,7 @@ variable "environments" {
       name       = "production"
       branch     = "main"
       variables = {
-        CLOUDFLARE_ACCOUNT_ID = "<ANDA_ACCOUNT_ID>"
+        CLOUDFLARE_ACCOUNT_ID = "71d62ebb4223320c37383e3398f86a59"
       }
     }
     "infrastructure/terraform-plan" = {

@@ -21,7 +21,7 @@ terraform {
     key    = "cloudflare-production.tfstate"
     region = "auto"
     endpoints = {
-      s3 = "https://<ANDA_ACCOUNT_ID>.r2.cloudflarestorage.com"
+      s3 = "https://71d62ebb4223320c37383e3398f86a59.r2.cloudflarestorage.com"
     }
 
     use_lockfile                = true

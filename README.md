@@ -83,10 +83,6 @@ bucket and the zones are created. Replace each one before the first pull request
 
 | Placeholder | Value | File |
 |---|---|---|
-| `<ANDA_ACCOUNT_ID>` | the Anda Cloudflare account id (dashboard, Account home, "Account ID") | `cloudflare/production/variables-environment.tf` (default of `cloudflare_account_id`); `cloudflare/production/provider.tf` (R2 endpoint `https://<ANDA_ACCOUNT_ID>.r2.cloudflarestorage.com`) |
-| `<ANDAPHILOSOPHY_COM_ZONE_ID>` | zone id of `andaphilosophy.com` (zone Overview, "Zone ID") | `cloudflare/production/import-zones.tf` |
-| `<ANDAISM_COM_ZONE_ID>` | zone id of `andaism.com` | `cloudflare/production/import-zones.tf` |
-| `<ANDA_ACCOUNT_ID>` (again) | the same account id | `github/production/provider.tf` (R2 endpoint); `github/production/variables-environments.tf` (variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`) |
 | `<INFRASTRUCTURE_DESCRIPTION>` | the description of this repository as GitHub shows it, empty string if none | `github/production/variables-repositories.tf` |
 | `<MONOREPO_PRODUCTION_MAIN_POLICY_ID>` | id of the branch policy `main` of `monorepo/production` (command below) | `github/production/imports.tf` |
 | `<INFRASTRUCTURE_TERRAFORM_APPLY_MAIN_POLICY_ID>` | id of the branch policy `main` of `infrastructure/terraform-apply` (command below) | `github/production/imports.tf` |
