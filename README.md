@@ -32,6 +32,10 @@ plan also creates the two `protect main` rulesets, the Actions permissions, the 
 switches, the `main` branch policies of the two environments limited to `main` and the environment
 variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`.
 
+The provider sends the visibility of a repository and its secret scanning settings in one PATCH.
+Changing a repository from private to public through Terraform therefore fails with 422 "Secret
+scanning is not available for this repository". Switch the visibility by hand first, then apply.
+
 ## The loop
 
 1. Branch, change a root, open a pull request.
@@ -47,6 +51,13 @@ variable `CLOUDFLARE_ACCOUNT_ID` of `monorepo/production`.
 | Pull request from a fork | `check` only; fork code never reaches a token |
 | Pull request from Dependabot | `check` only; the merge plans and applies |
 | Push to `main` touching a root | `check`, then `apply` (write tokens) |
+
+The plan of a pull request on the github root shows, for every repository, `allow_merge_commit`,
+`allow_rebase_merge` and `allow_squash_merge` going from `false` to `true`, and the four fields
+`merge_commit_title`, `merge_commit_message`, `squash_merge_commit_title` and
+`squash_merge_commit_message` being added. This is not drift. GitHub omits those fields for a
+token without write access, so the read-only plan token sees them as unset. The apply token reads
+the real values, and the plan after the apply on `main` shows no changes.
 
 No plan is uploaded as an artifact: artifacts of a public repository can be downloaded by anyone,
 and a plan holds a copy of state.
@@ -70,12 +81,14 @@ Terraform or in this repository.
 | `CLOUDFLARE_API_TOKEN` | `terraform-plan` | Zone, DNS, Zone Settings, Single Redirect: Read, on the two zones |
 | `CLOUDFLARE_API_TOKEN` | `terraform-apply` | the same, Edit (Zone stays Read) |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | both | R2 Object Read and Write, bucket `anda-terraform-state` only |
-| `TF_GITHUB_TOKEN` | `terraform-plan` | fine-grained token of `andafoundation`, repositories `monorepo` and `infrastructure` only: Administration, Environments, Variables, Metadata: Read |
-| `TF_GITHUB_TOKEN` | `terraform-apply` | the same repositories: Administration, Environments, Variables: Read and write; Metadata: Read |
+| `TF_GITHUB_TOKEN` | `terraform-plan` | fine-grained token of `andafoundation`, repositories `monorepo` and `infrastructure` only: Actions, Administration, Environments, Variables, Metadata: Read |
+| `TF_GITHUB_TOKEN` | `terraform-apply` | the same repositories: Administration, Environments, Variables: Read and write; Actions, Metadata: Read |
 
 `TF_GITHUB_TOKEN` is mapped to `GITHUB_TOKEN` in the github root's jobs only (a secret name cannot
-start with `GITHUB_`). The tokens do not expire. To rotate one, roll it in the Cloudflare or
-GitHub settings and set the new value with the `gh secret set` command above.
+start with `GITHUB_`). Both GitHub tokens need Actions: Read-only, because the provider reads the
+environments of the repositories and GitHub answers 403 without it. The tokens do not expire. To
+rotate one, roll it in the Cloudflare or GitHub settings and set the new value with the
+`gh secret set` command above.
 
 ## Values to check
 
@@ -108,19 +121,23 @@ These are set by hand in the GitHub or Cloudflare settings:
   imported);
 - secret values and the tokens behind them;
 - private vulnerability reporting on both repositories;
-- on both repositories, the security settings that provider `integrations/github` 6.13.0 cannot
-  manage, set through the API as `andafoundation`. The provider neither sends nor reads them, so
-  they cause no change in a plan:
-  - secret scanning of non-provider patterns and secret scanning validity checks:
-    `gh api -X PATCH repos/andafoundation/<repository> --input -` with
-    `{"security_and_analysis": {"secret_scanning_non_provider_patterns": {"status": "enabled"}, "secret_scanning_validity_checks": {"status": "enabled"}}}`;
+- on both repositories, the settings that provider `integrations/github` 6.13.0 cannot manage, set
+  through the API as `andafoundation`. The provider neither sends nor reads them, so they cause no
+  change in a plan:
   - code scanning with CodeQL default setup, which picks the languages itself (Actions here,
     Actions and JavaScript/TypeScript in `andafoundation/monorepo`):
     `gh api -X PATCH repos/andafoundation/<repository>/code-scanning/default-setup -f state=configured`;
-- Actions: "Require approval for all outside collaborators" on fork pull requests;
-- the nameservers and DNSSEC at the domain registrar.
+  - approval of Actions runs on fork pull requests, set to `all_external_contributors`:
+    `gh api -X PUT repos/andafoundation/<repository>/actions/permissions/fork-pr-contributor-approval -f approval_policy=all_external_contributors`;
+- the nameservers and DNSSEC at the domain registrar;
 - the Worker and its custom domain `andaphilosophy.com`, deployed from `andafoundation/monorepo`,
   with the read-only AAAA record that the custom domain creates.
+
+Secret scanning of non-provider patterns and secret scanning validity checks are not available on
+this account and stay off. On a personal account they need the paid GitHub Secret Protection, even
+for a public repository: the API accepts a request to enable them and answers 200, but leaves both
+disabled. Secret scanning and push protection, which Terraform manages, are on for both
+repositories.
 
 ## Bootstrap
 
